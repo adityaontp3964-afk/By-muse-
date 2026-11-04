@@ -23,7 +23,6 @@ jobs:
         run: |
           ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
           if [ -n "$ZIP_FILE" ]; then
-            echo "Extracting: $ZIP_FILE"
             unzip -o "$ZIP_FILE"
           fi
 
@@ -33,130 +32,32 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Locate Android Project Root
-        id: locate-dir
+      - name: Locate Android Directory
+        id: locate
         run: |
           SETTINGS_PATH=$(find . -name "settings.gradle*" | head -n 1)
           if [ -z "$SETTINGS_PATH" ]; then
-            echo "settings.gradle not found!"
+            echo "settings.gradle missing"
             exit 1
           fi
-          PROJECT_DIR=$(dirname "$SETTINGS_PATH")
-          echo "Android project located at: $PROJECT_DIR"
-          echo "dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
+          echo "dir=$(dirname "$SETTINGS_PATH")" >> $GITHUB_OUTPUT
 
-      - name: Auto-Fix Screens.kt Syntax Error
+      - name: Patch Kotlin Syntax Bugs
         run: |
-          TARGET_DIR="${{ steps.locate-dir.outputs.dir }}"
-          SCREENS_FILE=$(find "$TARGET_DIR" -name "Screens.kt" | head -n 1)
-          if [ -n "$SCREENS_FILE" ]; then
-            echo "Patching Screens.kt at: $SCREENS_FILE"
-            cat << 'EOF' > "$SCREENS_FILE"
-package com.jarvis.assistant.ui
-
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-
-private val Bg = Color(0xFF020617)
-private val Cyan = Color(0xFF22D3EE)
-
-@Composable
-fun JarvisTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Bg, primary = Cyan), content = content)
-}
-
-@Composable
-fun HomeScreen() {
-    var listening by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Idle - awaiting command") }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("JARVIS", color = Cyan, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
-        Text("Hybrid AI Core - Auto", color = Color.Gray, fontSize = 12.sp)
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = { 
-            listening = !listening
-            status = if (listening) "Idle" else "Listening..."
-        }) {
-            Text(if (listening) "Stop Listening" else "Start Listening")
-        }
-        Spacer(Modifier.height(12.dp))
-        Text(status, color = Color.White, fontSize = 13.sp)
-        Spacer(Modifier.height(16.dp))
-        val actions = listOf("WhatsApp", "YouTube", "Chrome", "Web Search", "Call", "Alarm", "Settings", "Voice Chat")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            items(actions.chunked(2)) { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    row.forEach { a ->
-                        Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))) {
-                            Text(a, modifier = Modifier.padding(14.dp), color = Color.White, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun LogsScreen() {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("RECENT ACTIVE TASKS", color = Color.White, fontWeight = FontWeight.Black)
-        Text("Real recorded actions only.", color = Color.Gray, fontSize = 12.sp)
-        Spacer(Modifier.height(12.dp))
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))) {
-            Text("No fake activity. Tasks appear after you run commands.", modifier = Modifier.padding(16.dp), color = Color.Gray, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-fun ProfileScreen() {
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("JARVIS", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
-        Text("Your Personal AI Assistant - v2.0.0", color = Color.Gray, fontSize = 12.sp)
-        Spacer(Modifier.height(16.dp))
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Personalization, memory controls and about live here.", color = Color.Gray, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun SettingsScreen() {
-    var fast by remember { mutableStateOf(true) }
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("SETTINGS", color = Color.White, fontWeight = FontWeight.Black)
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Fast Response Mode", color = Color.White)
-            Switch(checked = fast, onCheckedChange = { fast = it })
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("Providers, voice models, appearance, automation, permissions, privacy - all functional via DataStore + Room.", color = Color.Gray, fontSize = 12.sp)
-    }
-}
-EOF
+          TARGET_DIR="${{ steps.locate.outputs.dir }}"
+          SCREENS=$(find "$TARGET_DIR" -name "Screens.kt" | head -n 1)
+          if [ -n "$SCREENS" ]; then
+            # Fix Modifier.height(24) -> Modifier.height(24.dp)
+            sed -i -E 's/Modifier\.height\(([0-9]+)\)/Modifier.height(\1.dp)/g' "$SCREENS"
+            # Fix Spacer(Modifier.height(X))
+            sed -i -E 's/\.height\(([0-9]+)\)/.height(\1.dp)/g' "$SCREENS"
+            # Fix padding(20) -> padding(20.dp)
+            sed -i -E 's/\.padding\(([0-9]+)\)/.padding(\1.dp)/g' "$SCREENS"
           fi
 
-      - name: Fix Wrapper and Permissions
+      - name: Setup Wrapper and Memory
         run: |
-          TARGET_DIR="${{ steps.locate-dir.outputs.dir }}"
+          TARGET_DIR="${{ steps.locate.outputs.dir }}"
           cd "$TARGET_DIR"
 
           if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
@@ -164,7 +65,7 @@ EOF
             curl -sSL -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
           fi
 
-          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" > gradle.properties
+          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.nonTransitiveRClass=true" >> gradle.properties
 
@@ -172,14 +73,12 @@ EOF
 
       - name: Build Debug APK
         run: |
-          cd "${{ steps.locate-dir.outputs.dir }}"
-          ./gradlew assembleDebug --no-daemon --no-build-cache
+          cd "${{ steps.locate.outputs.dir }}"
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JARVIS-debug-apk
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
-          retention-days: 14
