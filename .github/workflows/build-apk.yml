@@ -21,10 +21,9 @@ jobs:
 
       - name: Extract ZIP if present
         run: |
-          # Agar repo me koi bhi .zip file hai toh extract kar lo
           ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
           if [ -n "$ZIP_FILE" ]; then
-            echo "Found zip file: $ZIP_FILE. Extracting..."
+            echo "Extracting: $ZIP_FILE"
             unzip -o "$ZIP_FILE"
           fi
 
@@ -37,36 +36,36 @@ jobs:
       - name: Locate Android Project Root
         id: locate-dir
         run: |
-          # settings.gradle ya settings.gradle.kts ko khoj kar actual folder path set karega
           SETTINGS_PATH=$(find . -name "settings.gradle*" | head -n 1)
           if [ -z "$SETTINGS_PATH" ]; then
-            echo "ERROR: settings.gradle(.kts) nahi mila repo me!"
-            ls -la
+            echo "settings.gradle not found!"
             exit 1
           fi
           PROJECT_DIR=$(dirname "$SETTINGS_PATH")
-          echo "Android project located at: $PROJECT_DIR"
           echo "dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
 
-      - name: Verify Gradle Wrapper & Permissions
+      - name: Fix Memory and Wrapper
         run: |
           TARGET_DIR="${{ steps.locate-dir.outputs.dir }}"
           cd "$TARGET_DIR"
 
-          # Wrapper jar download agar missing ho
+          # Wrapper jar ensure karo
           if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Downloading gradle-wrapper.jar..."
             mkdir -p gradle/wrapper
             curl -sSL -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
           fi
 
-          # gradlew ko execute permission
+          # Safe JVM memory config (prevents runner OOM crash)
+          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
+          echo "android.nonTransitiveRClass=true" >> gradle.properties
+
           chmod +x gradlew
 
       - name: Build Debug APK
         run: |
           cd "${{ steps.locate-dir.outputs.dir }}"
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --no-build-cache
 
       - name: Find and Upload APK Artifact
         uses: actions/upload-artifact@v4
